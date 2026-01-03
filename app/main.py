@@ -4,7 +4,7 @@ from fastapi import FastAPI, Depends, HTTPException
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from jose import JWTError, jwt
-
+from fastapi.middleware.cors import CORSMiddleware
 from app.db import Base, engine, get_db
 from app.models import User, HistoryItem
 from app.schemas import RegisterRequest, SolveRequest, SolveResponse
@@ -25,10 +25,22 @@ from app.solver import (
 )
 
 app = FastAPI(title="Polynomial Solver API")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://elegant-mochi-7d7b9d.netlify.app",
+        "http://localhost:3000",
+        "http://localhost:5173",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 Base.metadata.create_all(bind=engine)
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
+
 
 # =========================
 # AUTH HELPERS
