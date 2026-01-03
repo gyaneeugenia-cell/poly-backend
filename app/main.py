@@ -24,17 +24,16 @@ from app.solver import (
     roots_from_json,
 )
 
+app = FastAPI(title="Polynomial Solver API")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://elegant-mochi-7d7b9d.netlify.app",
-        "https://benevolent-jalebi-f0af99.netlify.app",
-    ],
-    allow_origin_regex=r"^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$",
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 
 
