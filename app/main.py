@@ -390,10 +390,16 @@ def db_info(db: Session = Depends(get_db)):
 from sqlalchemy import text
 from app.db import engine
 
+from sqlalchemy import text
+from app.db import engine
+
 @app.on_event("startup")
 def startup_db_check():
+    print("🔥 FASTAPI STARTED — RUNNING STARTUP CHECK")
     with engine.connect() as conn:
         result = conn.execute(
             text("select current_database(), inet_server_addr(), inet_server_port();")
         ).fetchone()
-        print("RENDER STARTUP DB CHECK:", result)
+        print("🔥 STARTUP DB CHECK:", result)
+
+
