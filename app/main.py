@@ -112,9 +112,11 @@ def validate_password_policy(password: str):
 # =========================
 # REGISTER
 # =========================
-
 @app.post("/register")
 def register(payload: RegisterRequest, db: Session = Depends(get_db)):
+    print("🔥 REGISTER ENDPOINT HIT")
+    print("USERNAME RECEIVED:", payload.username)
+
     existing = db.query(User).filter(User.username == payload.username).first()
     if existing:
         raise HTTPException(status_code=400, detail="Username already exists")
@@ -127,12 +129,14 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
         role="user",
     )
 
-
     db.add(user)
     db.commit()
     db.refresh(user)
 
+    print("✅ USER COMMITTED:", user.username)
+
     return {"message": "User registered successfully"}
+
 @app.post("/forgot-password")
 def forgot_password(
     payload: ForgotPasswordRequest,
