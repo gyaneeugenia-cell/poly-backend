@@ -8,7 +8,8 @@ from sqlalchemy import (
     Boolean,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from datetime import datetime
+from datetime import datetime, timedelta
+
 from .db import Base
 
 
@@ -38,10 +39,23 @@ class User(Base):
         DateTime, default=utcnow, nullable=False
     )
 
+    password_changed_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False,
+        default=utcnow,
+    )
+
+    password_expires_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False,
+        default=lambda: utcnow() + timedelta(days=90),
+    )
+
     history: Mapped[list["HistoryItem"]] = relationship(
         back_populates="user",
         cascade="all, delete-orphan"
     )
+
 
 
 class HistoryItem(Base):

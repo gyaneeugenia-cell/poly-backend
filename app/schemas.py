@@ -52,3 +52,9 @@ class HistoryOut(BaseModel):
 
 class HistoryListResponse(BaseModel):
     items: List[HistoryOut]
+class PasswordResetRequest(BaseModel):
+    username: str
+    new_password: str = Field(min_length=8, max_length=128)
+class ForgotPasswordRequest(BaseModel):
+    username: str
+    new_password: str = Field(min_length=8, max_length=128)

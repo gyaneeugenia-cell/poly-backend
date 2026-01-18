@@ -1,4 +1,8 @@
 import json
+import re
+from fastapi import HTTPException, status
+from datetime import datetime, timezone, timedelta
+
 
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
@@ -7,7 +11,13 @@ from jose import JWTError, jwt
 from fastapi.middleware.cors import CORSMiddleware
 from app.db import Base, engine, get_db
 from app.models import User, HistoryItem
-from app.schemas import RegisterRequest, SolveRequest, SolveResponse
+from app.schemas import (
+    RegisterRequest,
+    SolveRequest,
+    SolveResponse,
+    ForgotPasswordRequest,
+)
+
 from app.security import (
     hash_password,
     verify_password,
@@ -37,7 +47,7 @@ app.add_middleware(
 
 
 
-Base.metadata.create_all(bind=engine)
+#Base.metadata.create_all(bind=engine)
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
 
@@ -69,6 +79,30 @@ def require_admin(user: User = Depends(get_current_user)):
     if user.role != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
     return user
+def validate_password_policy(password: str):
+    if len(password) < 8:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password must be at least 8 characters long"
+        )
+
+    if not re.search(r"[A-Z]", password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password must contain at least one capital letter"
+        )
+
+    if not re.search(r"[0-9]", password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password must contain at least one number"
+        )
+
+    if not re.search(r"[!@#\$&*~^%+=_\-]", password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password must contain at least one special character"
+        )
 
 # =========================
 # REGISTER
@@ -80,17 +114,42 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
     if existing:
         raise HTTPException(status_code=400, detail="Username already exists")
 
+    validate_password_policy(payload.password)
+
     user = User(
         username=payload.username,
         password_hash=hash_password(payload.password),
         role="user",
     )
 
+
     db.add(user)
     db.commit()
     db.refresh(user)
 
     return {"message": "User registered successfully"}
+@app.post("/forgot-password")
+def forgot_password(
+    payload: ForgotPasswordRequest,
+    db: Session = Depends(get_db),
+):
+    user = db.query(User).filter(User.username == payload.username).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Enforce password policy
+    validate_password_policy(payload.new_password)
+
+    # Set new password
+    user.password_hash = hash_password(payload.new_password)
+    user.password_changed_at = datetime.utcnow()
+    user.password_expires_at = datetime.utcnow() + timedelta(days=90)
+
+    db.commit()
+
+    return {
+        "message": "Password reset successful. Please log in with your new password."
+    }
 
 # =========================
 # LOGIN
@@ -108,10 +167,39 @@ def login(
 
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Account is disabled")
+    
+    from datetime import datetime
+
+    if user.password_expires_at < datetime.utcnow():
+
+        raise HTTPException(
+            status_code=403,
+            detail="Password expired. Please reset your password."
+        )
 
     access_token = create_access_token(data={"sub": user.username})
 
     return {"access_token": access_token, "token_type": "bearer"}
+from app.schemas import PasswordResetRequest
+
+@app.post("/reset-password")
+def reset_password(
+    payload: PasswordResetRequest,
+    db: Session = Depends(get_db),
+):
+    user = db.query(User).filter(User.username == payload.username).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    validate_password_policy(payload.new_password)
+
+    user.password_hash = hash_password(payload.new_password)
+    user.password_changed_at = datetime.utcnow()
+    user.password_expires_at = datetime.utcnow() + timedelta(days=90)
+
+    db.commit()
+
+    return {"message": "Password reset successful. Please log in again."}
 
 
 # =========================
@@ -270,3 +358,33 @@ def solve_polynomial(
         "y_min": y_min,
         "y_max": y_max,
     }
+from sqlalchemy import text
+from app.db import engine
+
+@app.get("/test-db")
+def test_db():
+    with engine.connect() as conn:
+        conn.execute(text("select 1"))
+    return {"status": "connected to supabase"}
+from sqlalchemy import text
+
+@app.get("/db-info")
+def db_info(db: Session = Depends(get_db)):
+    result = db.execute(text("""
+        SELECT
+            current_database() AS database,
+            inet_server_addr() AS server_ip,
+            version() AS version
+    """)).mappings().first()
+
+    return dict(result)
+from sqlalchemy import text
+from app.db import engine
+
+@app.on_event("startup")
+def startup_db_check():
+    with engine.connect() as conn:
+        result = conn.execute(
+            text("select current_database(), inet_server_addr(), inet_server_port();")
+        ).fetchone()
+        print("RENDER STARTUP DB CHECK:", result)
