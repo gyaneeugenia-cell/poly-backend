@@ -20,18 +20,8 @@ SessionLocal = sessionmaker(
     bind=engine,
 )
 
-from sqlalchemy import text   # add this import at the top
-
-
 def get_db():
     db = SessionLocal()
-
-    # 🔍 TEMP DEBUG: identify which database FastAPI is using
-    result = db.execute(
-        text("select current_database(), inet_server_addr(), inet_server_port();")
-    ).fetchone()
-    print("FASTAPI DB CHECK:", result)
-
     try:
         yield db
     finally:
