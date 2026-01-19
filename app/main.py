@@ -40,13 +40,20 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://poly-solver-flutter.vercel.app",
-        "http://localhost:49757",
-        "http://localhost:3000",
     ],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "OPTIONS", "DELETE"],
+    allow_headers=[
+        "Authorization",
+        "Content-Type",
+        "Accept",
+        "Origin",
+    ],
 )
+@app.options("/{path:path}")
+def preflight_handler(path: str):
+    return {}
+
 
 @app.get("/")
 def root():
