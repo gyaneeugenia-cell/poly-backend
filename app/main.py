@@ -235,7 +235,7 @@ def history(
         {
             "equation": h.polynomial,
             "created_at": h.created_at.isoformat(),
-            "roots": json.loads(h.roots_json),
+            "roots": json.loads(h.roots),
         }
         for h in items
     ]
