@@ -347,17 +347,16 @@ def solve_polynomial(
 
     y_min, y_max = auto_fit_y(payload.coeffs, payload.x_min, payload.x_max)
 
-history_item = HistoryItem(
-    user_id=current_user.id,
-    polynomial=equation,
-    coeffs_csv=",".join(str(c) for c in payload.coeffs),
-    roots=roots_json,
-    x_min=payload.x_min,
-    x_max=payload.x_max,
-    y_min=y_min,
-    y_max=y_max,
-)
-
+    history_item = HistoryItem(
+        user_id=current_user.id,
+        polynomial=equation,
+        coeffs_csv=",".join(str(c) for c in payload.coeffs),
+        roots=roots_json,
+        x_min=payload.x_min,
+        x_max=payload.x_max,
+        y_min=y_min,
+        y_max=y_max,
+    )
 
     db.add(history_item)
     db.commit()
@@ -370,6 +369,7 @@ history_item = HistoryItem(
         "y_min": y_min,
         "y_max": y_max,
     }
+
 from sqlalchemy import text
 from app.db import engine
 
