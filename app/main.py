@@ -233,7 +233,7 @@ def history(
 
     return [
         {
-            "equation": h.equation,
+            "equation": h.polynomial,
             "created_at": h.created_at.isoformat(),
             "roots": json.loads(h.roots_json),
         }
@@ -273,7 +273,7 @@ def admin_all_history(
         "items": [
             {
                 "username": h.user.username,
-                "equation": h.equation,
+                "equation": h.polynomial,
                 "created_at": h.created_at.isoformat(),
             }
             for h in items
@@ -347,16 +347,17 @@ def solve_polynomial(
 
     y_min, y_max = auto_fit_y(payload.coeffs, payload.x_min, payload.x_max)
 
-    history_item = HistoryItem(
-        user_id=current_user.id,
-        equation=equation,
-        coeffs_csv=",".join(str(c) for c in payload.coeffs),
-        roots_json=roots_json,
-        x_min=payload.x_min,
-        x_max=payload.x_max,
-        y_min=y_min,
-        y_max=y_max,
-    )
+history_item = HistoryItem(
+    user_id=current_user.id,
+    polynomial=equation,
+    coeffs_csv=",".join(str(c) for c in payload.coeffs),
+    roots=roots_json,
+    x_min=payload.x_min,
+    x_max=payload.x_max,
+    y_min=y_min,
+    y_max=y_max,
+)
+
 
     db.add(history_item)
     db.commit()

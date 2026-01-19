@@ -64,17 +64,21 @@ class HistoryItem(Base):
     id: Mapped[int] = mapped_column(
         Integer, primary_key=True, autoincrement=True
     )
+
     user_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("users.id"), nullable=False
     )
 
-    equation: Mapped[str] = mapped_column(
+    # ✅ These names match your Supabase table
+    polynomial: Mapped[str] = mapped_column(
         Text, nullable=False
     )
+
+    roots: Mapped[str] = mapped_column(
+        Text, nullable=False
+    )
+
     coeffs_csv: Mapped[str] = mapped_column(
-        Text, nullable=False
-    )
-    roots_json: Mapped[str] = mapped_column(
         Text, nullable=False
     )
 
@@ -98,3 +102,4 @@ class HistoryItem(Base):
     user: Mapped[User] = relationship(
         back_populates="history"
     )
+
