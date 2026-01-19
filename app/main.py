@@ -193,6 +193,32 @@ def login(
     return {"access_token": access_token, "token_type": "bearer"}
 from app.schemas import PasswordResetRequest
 
+from app.schemas import ChangeExpiredPasswordRequest
+
+@app.post("/change-expired-password")
+def change_expired_password(
+    payload: ChangeExpiredPasswordRequest,
+    db: Session = Depends(get_db),
+):
+    user = db.query(User).filter(User.username == payload.username).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if not verify_password(payload.old_password, user.password_hash):
+        raise HTTPException(status_code=401, detail="Invalid old password")
+
+    validate_password_policy(payload.new_password)
+
+    user.password_hash = hash_password(payload.new_password)
+    user.password_changed_at = datetime.utcnow()
+    user.password_expires_at = datetime.utcnow() + timedelta(days=90)
+
+    db.commit()
+
+    return {
+        "message": "Password changed successfully. Please log in."
+    }
+
 @app.post("/reset-password")
 def reset_password(
     payload: PasswordResetRequest,

@@ -58,3 +58,7 @@ class PasswordResetRequest(BaseModel):
 class ForgotPasswordRequest(BaseModel):
     username: str
     new_password: str = Field(min_length=8, max_length=128)
+class ChangeExpiredPasswordRequest(BaseModel):
+    username: str
+    old_password: str
+    new_password: str = Field(min_length=8, max_length=128)
