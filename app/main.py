@@ -38,21 +38,13 @@ app = FastAPI(title="Polynomial Solver API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://poly-solver-flutter.vercel.app",
-    ],
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS", "DELETE"],
-    allow_headers=[
-        "Authorization",
-        "Content-Type",
-        "Accept",
-        "Origin",
-    ],
+    allow_origins=["https://poly-solver-flutter.vercel.app"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
-@app.options("/{path:path}")
-def preflight_handler(path: str):
-    return {}
+
+
 
 
 @app.get("/")
