@@ -205,7 +205,7 @@ def change_expired_password(
         raise HTTPException(status_code=404, detail="User not found")
 
     if not verify_password(payload.old_password, user.password_hash):
-        raise HTTPException(status_code=401, detail="Invalid old password")
+        raise HTTPException(status_code=401, detail="Old password is incorrect")
 
     validate_password_policy(payload.new_password)
 
@@ -215,9 +215,8 @@ def change_expired_password(
 
     db.commit()
 
-    return {
-        "message": "Password changed successfully. Please log in."
-    }
+    return {"message": "Password changed successfully. Please log in."}
+
 
 @app.post("/reset-password")
 def reset_password(
@@ -238,37 +237,6 @@ def reset_password(
 
     return {"message": "Password reset successful. Please log in again."}
 
-@app.post("/change-expired-password")
-def change_expired_password(
-    username: str,
-    old_password: str,
-    new_password: str,
-    db: Session = Depends(get_db),
-):
-    user = db.query(User).filter(User.username == username).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    # Verify OLD password
-    if not verify_password(old_password, user.password_hash):
-        raise HTTPException(
-            status_code=401,
-            detail="Old password is incorrect"
-        )
-
-    # Enforce password policy
-    validate_password_policy(new_password)
-
-    # Update password
-    user.password_hash = hash_password(new_password)
-    user.password_changed_at = datetime.utcnow()
-    user.password_expires_at = datetime.utcnow() + timedelta(days=90)
-
-    db.commit()
-
-    return {
-        "message": "Password updated successfully. Please log in."
-    }
 
 # =========================
 # USER HISTORY
