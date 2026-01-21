@@ -1,14 +1,20 @@
 import json
 import re
+import secrets
 from fastapi import HTTPException, status
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 
-
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from jose import JWTError, jwt
 from fastapi.middleware.cors import CORSMiddleware
+import os
+import resend
+
+resend.api_key = os.getenv("RESEND_API_KEY")
+print("RESEND KEY LOADED:", bool(resend.api_key))
+
 from app.db import Base, engine, get_db
 from app.models import User, HistoryItem
 from app.schemas import (
@@ -16,6 +22,8 @@ from app.schemas import (
     SolveRequest,
     SolveResponse,
     ForgotPasswordRequest,
+    ResetPasswordRequest,
+    ChangeExpiredPasswordRequest,
 )
 
 from app.security import (
@@ -34,6 +42,9 @@ from app.solver import (
     roots_from_json,
 )
 
+from sqlalchemy import text
+
+
 app = FastAPI(title="Polynomial Solver API")
 
 app.add_middleware(
@@ -45,16 +56,10 @@ app.add_middleware(
 )
 
 
-
-
 @app.get("/")
 def root():
     return {"status": "ok"}
 
-
-
-
-#Base.metadata.create_all(bind=engine)
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
 
@@ -86,91 +91,138 @@ def require_admin(user: User = Depends(get_current_user)):
     if user.role != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
     return user
+
+
 def validate_password_policy(password: str):
     if len(password) < 8:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Password must be at least 8 characters long"
-        )
-
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters long")
     if not re.search(r"[A-Z]", password):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Password must contain at least one capital letter"
-        )
-
+        raise HTTPException(status_code=400, detail="Password must contain at least one capital letter")
     if not re.search(r"[0-9]", password):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Password must contain at least one number"
-        )
-
+        raise HTTPException(status_code=400, detail="Password must contain at least one number")
     if not re.search(r"[!@#\$&*~^%+=_\-]", password):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Password must contain at least one special character"
-        )
+        raise HTTPException(status_code=400, detail="Password must contain at least one special character")
+
 
 # =========================
 # REGISTER
 # =========================
+
 @app.post("/register")
 def register(payload: RegisterRequest, db: Session = Depends(get_db)):
-    print("🔥 REGISTER ENDPOINT HIT")
-    print("USERNAME RECEIVED:", payload.username)
-
     existing = db.query(User).filter(User.username == payload.username).first()
     if existing:
         raise HTTPException(status_code=400, detail="Username already exists")
+
+    existing_email = db.query(User).filter(User.email == payload.email).first()
+    if existing_email:
+        raise HTTPException(status_code=400, detail="Email already exists")
 
     validate_password_policy(payload.password)
 
     user = User(
         username=payload.username,
+        email=payload.email,
         password_hash=hash_password(payload.password),
         role="user",
+        is_active=True,
+        password_changed_at=datetime.utcnow(),
+        password_expires_at=datetime.utcnow() + timedelta(days=90),
     )
 
     db.add(user)
     db.commit()
     db.refresh(user)
 
-    print("✅ USER COMMITTED:", user.username)
-
     return {"message": "User registered successfully"}
 
+
+# =========================
+# FORGOT PASSWORD
+# =========================
+
+def send_password_reset_email(to_email: str, token: str):
+    reset_link = f"https://poly-solver-flutter.vercel.app/reset-password?token={token}&email={to_email}"
+
+    try:
+        resend.Emails.send({
+            "from": "Polynomial Solver <onboarding@resend.dev>",
+            "to": [to_email],
+            "subject": "Reset your password",
+            "html": f"""
+                <p>You requested a password reset.</p>
+                <p><a href="{reset_link}">Reset Password</a></p>
+                <p>This link expires in 15 minutes.</p>
+            """
+        })
+        print("EMAIL SENT SUCCESSFULLY")
+
+    except Exception as e:
+        print("RESEND ERROR:", repr(e))
+        raise
+
+
 @app.post("/forgot-password")
-def forgot_password(
-    payload: ForgotPasswordRequest,
-    db: Session = Depends(get_db),
-):
-    user = db.query(User).filter(User.username == payload.username).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+def forgot_password(payload: ForgotPasswordRequest, db: Session = Depends(get_db)):
+    print("FORGOT PASSWORD REQUEST FOR:", payload.email)
 
-    # Enforce password policy
-    validate_password_policy(payload.new_password)
+    response_msg = {"message": "If the email exists, recovery instructions have been sent."}
 
-    # Set new password
-    user.password_hash = hash_password(payload.new_password)
-    user.password_changed_at = datetime.utcnow()
-    user.password_expires_at = datetime.utcnow() + timedelta(days=90)
+    user = db.query(User).filter(User.email == payload.email).first()
+    if not user or not user.is_active:
+        print("NO USER FOUND OR USER INACTIVE")
+        return response_msg
+
+    raw_token = secrets.token_urlsafe(32)
+    token_hash = hash_password(raw_token)
+
+    user.reset_token = token_hash
+    user.reset_token_expires_at = datetime.utcnow() + timedelta(minutes=15)
 
     db.commit()
 
-    return {
-        "message": "Password reset successful. Please log in with your new password."
-    }
+    print("SENDING EMAIL TO:", user.email)
+    send_password_reset_email(user.email, raw_token)
+
+    return response_msg
+
+
+
+# =========================
+# RESET PASSWORD
+# =========================
+
+@app.post("/reset-password")
+def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.email == payload.email).first()
+    if not user or not user.reset_token or not user.reset_token_expires_at:
+        raise HTTPException(status_code=400, detail="Invalid or expired token")
+
+    if user.reset_token_expires_at < datetime.now(timezone.utc):
+        raise HTTPException(status_code=400, detail="Token expired")
+
+    if not verify_password(payload.token, user.reset_token):
+        raise HTTPException(status_code=400, detail="Invalid or expired token")
+
+    validate_password_policy(payload.new_password)
+
+    user.password_hash = hash_password(payload.new_password)
+    user.password_changed_at = datetime.utcnow()
+    user.password_expires_at = datetime.utcnow() + timedelta(days=90)
+    user.reset_token = None
+    user.reset_token_expires_at = None
+
+    db.commit()
+
+    return {"message": "Password reset successful. Please log in."}
+
 
 # =========================
 # LOGIN
 # =========================
 
 @app.post("/login")
-def login(
-    form_data: OAuth2PasswordRequestForm = Depends(),
-    db: Session = Depends(get_db),
-):
+def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     user = db.query(User).filter(User.username == form_data.username).first()
 
     if not user or not verify_password(form_data.password, user.password_hash):
@@ -178,28 +230,20 @@ def login(
 
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Account is disabled")
-    
-    from datetime import datetime
 
     if user.password_expires_at < datetime.utcnow():
-
-        raise HTTPException(
-            status_code=403,
-            detail="PASSWORD_EXPIRED"
-        )
+        raise HTTPException(status_code=403, detail="PASSWORD_EXPIRED")
 
     access_token = create_access_token(data={"sub": user.username})
-
     return {"access_token": access_token, "token_type": "bearer"}
-from app.schemas import PasswordResetRequest
 
-from app.schemas import ChangeExpiredPasswordRequest
+
+# =========================
+# CHANGE EXPIRED PASSWORD
+# =========================
 
 @app.post("/change-expired-password")
-def change_expired_password(
-    payload: ChangeExpiredPasswordRequest,
-    db: Session = Depends(get_db),
-):
+def change_expired_password(payload: ChangeExpiredPasswordRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.username == payload.username).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -214,28 +258,7 @@ def change_expired_password(
     user.password_expires_at = datetime.utcnow() + timedelta(days=90)
 
     db.commit()
-
     return {"message": "Password changed successfully. Please log in."}
-
-
-@app.post("/reset-password")
-def reset_password(
-    payload: PasswordResetRequest,
-    db: Session = Depends(get_db),
-):
-    user = db.query(User).filter(User.username == payload.username).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    validate_password_policy(payload.new_password)
-
-    user.password_hash = hash_password(payload.new_password)
-    user.password_changed_at = datetime.utcnow()
-    user.password_expires_at = datetime.utcnow() + timedelta(days=90)
-
-    db.commit()
-
-    return {"message": "Password reset successful. Please log in again."}
 
 
 # =========================
@@ -267,15 +290,12 @@ def history(
 
 
 # =========================
-# ADMIN ENDPOINTS
+# ADMIN
 # =========================
-@app.get("/admin/users")
-def admin_all_users(
-    admin: User = Depends(require_admin),
-    db: Session = Depends(get_db),
-):
-    users = db.query(User).order_by(User.id.asc()).all()
 
+@app.get("/admin/users")
+def admin_all_users(admin: User = Depends(require_admin), db: Session = Depends(get_db)):
+    users = db.query(User).order_by(User.id.asc()).all()
     return {
         "users": [
             {
@@ -289,10 +309,7 @@ def admin_all_users(
 
 
 @app.get("/admin/history")
-def admin_all_history(
-    admin: User = Depends(require_admin),
-    db: Session = Depends(get_db),
-):
+def admin_all_history(admin: User = Depends(require_admin), db: Session = Depends(get_db)):
     items = db.query(HistoryItem).order_by(HistoryItem.id.desc()).all()
     return {
         "items": [
@@ -305,12 +322,9 @@ def admin_all_history(
         ]
     }
 
+
 @app.delete("/admin/users/{username}")
-def delete_user(
-    username: str,
-    admin: User = Depends(require_admin),
-    db: Session = Depends(get_db),
-):
+def delete_user(username: str, admin: User = Depends(require_admin), db: Session = Depends(get_db)):
     user = db.query(User).filter(User.username == username).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -319,12 +333,9 @@ def delete_user(
     db.commit()
     return {"message": "User deleted"}
 
+
 @app.post("/admin/users/{username}/disable")
-def disable_user(
-    username: str,
-    admin: User = Depends(require_admin),
-    db: Session = Depends(get_db),
-):
+def disable_user(username: str, admin: User = Depends(require_admin), db: Session = Depends(get_db)):
     user = db.query(User).filter(User.username == username).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -334,24 +345,18 @@ def disable_user(
 
     user.is_active = False
     db.commit()
-
     return {"message": f"{username} has been disabled"}
 
+
 @app.post("/admin/users/{username}/enable")
-def enable_user(
-    username: str,
-    admin: User = Depends(require_admin),
-    db: Session = Depends(get_db),
-):
+def enable_user(username: str, admin: User = Depends(require_admin), db: Session = Depends(get_db)):
     user = db.query(User).filter(User.username == username).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
     user.is_active = True
     db.commit()
-
     return {"message": f"{username} has been enabled"}
-
 
 
 # =========================
@@ -365,11 +370,9 @@ def solve_polynomial(
     db: Session = Depends(get_db),
 ):
     equation = build_equation_pretty(payload.degree, payload.coeffs)
-
     roots_complex = solve_roots_durand_kerner(payload.coeffs)
     roots_json = roots_to_json(roots_complex)
     roots = roots_from_json(roots_json)
-
     y_min, y_max = auto_fit_y(payload.coeffs, payload.x_min, payload.x_max)
 
     history_item = HistoryItem(
@@ -395,15 +398,13 @@ def solve_polynomial(
         "y_max": y_max,
     }
 
-from sqlalchemy import text
-from app.db import engine
 
 @app.get("/test-db")
 def test_db():
     with engine.connect() as conn:
         conn.execute(text("select 1"))
     return {"status": "connected to supabase"}
-from sqlalchemy import text
+
 
 @app.get("/db-info")
 def db_info(db: Session = Depends(get_db)):
@@ -413,14 +414,4 @@ def db_info(db: Session = Depends(get_db)):
             inet_server_addr() AS server_ip,
             version() AS version
     """)).mappings().first()
-
     return dict(result)
-from sqlalchemy import text
-from app.db import engine
-
-from sqlalchemy import text
-from app.db import engine
-
-
-
-

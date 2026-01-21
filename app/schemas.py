@@ -1,10 +1,15 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, EmailStr
 from typing import List
 
 
+# -------------------------
+# AUTH SCHEMAS
+# -------------------------
+
 class RegisterRequest(BaseModel):
     username: str = Field(min_length=1, max_length=80)
-    password: str = Field(min_length=6, max_length=128)
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=128)
 
 
 class LoginRequest(BaseModel):
@@ -16,6 +21,30 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
 
+
+# -------------------------
+# PASSWORD MANAGEMENT
+# -------------------------
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    email: EmailStr
+    token: str
+    new_password: str = Field(min_length=8, max_length=128)
+
+
+class ChangeExpiredPasswordRequest(BaseModel):
+    username: str
+    old_password: str
+    new_password: str = Field(min_length=8, max_length=128)
+
+
+# -------------------------
+# POLYNOMIAL SOLVER
+# -------------------------
 
 class SolveRequest(BaseModel):
     degree: int = Field(ge=1, le=50)
@@ -38,6 +67,10 @@ class SolveResponse(BaseModel):
     y_max: float
 
 
+# -------------------------
+# HISTORY
+# -------------------------
+
 class HistoryOut(BaseModel):
     id: int
     created_at: str
@@ -52,13 +85,3 @@ class HistoryOut(BaseModel):
 
 class HistoryListResponse(BaseModel):
     items: List[HistoryOut]
-class PasswordResetRequest(BaseModel):
-    username: str
-    new_password: str = Field(min_length=8, max_length=128)
-class ForgotPasswordRequest(BaseModel):
-    username: str
-    new_password: str = Field(min_length=8, max_length=128)
-class ChangeExpiredPasswordRequest(BaseModel):
-    username: str
-    old_password: str
-    new_password: str = Field(min_length=8, max_length=128)
