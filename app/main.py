@@ -12,7 +12,8 @@ from fastapi.middleware.cors import CORSMiddleware
 import os
 import resend
 
-resend.api_key = os.getenv("RESEND_API_KEY")
+resend.api_key = os.getenv("RESEND_API_KEY", "").strip()
+
 print("RESEND KEY LOADED:", bool(resend.api_key))
 
 from app.db import Base, engine, get_db
