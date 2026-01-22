@@ -51,14 +51,17 @@ app = FastAPI(title="Polynomial Solver API")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-    "https://poly-solver-flutter.vercel.app",
-    "https://vocal-moonbeam-ad8c8e.netlify.app"
-]
-
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:3000",
+        "https://poly-solver-flutter.vercel.app",
+        "https://your-netlify-site.netlify.app"
+    ],
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 
 @app.get("/")
