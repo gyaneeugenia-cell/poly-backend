@@ -3,6 +3,22 @@ import cmath
 import math
 import json
 
+SUPERSCRIPTS = {
+    "0": "⁰",
+    "1": "¹",
+    "2": "²",
+    "3": "³",
+    "4": "⁴",
+    "5": "⁵",
+    "6": "⁶",
+    "7": "⁷",
+    "8": "⁸",
+    "9": "⁹",
+    "-": "⁻",
+}
+
+def to_superscript(n: int) -> str:
+    return "".join(SUPERSCRIPTS[c] for c in str(n))
 
 def build_equation_pretty(degree: int, coeffs: List[float]) -> str:
     def near_zero(x: float) -> bool:
@@ -39,7 +55,7 @@ def build_equation_pretty(degree: int, coeffs: List[float]) -> str:
         if p > 0:
             term += "x"
             if p > 1:
-                term += f"^{p}"
+                term += to_superscript(p)
 
         parts.append(term)
 
